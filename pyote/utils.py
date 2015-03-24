@@ -3,9 +3,19 @@ from copy import deepcopy
 
 class TransactionSequence(object):
     def __init__(self, starting_state, inserts=None, deletes=None):
+        """
+
+        :param State starting_state:
+        :param InsertOperationNode inserts:
+        :param DeleteOperationNode deletes:
+        :return:
+        """
         self.starting_state = starting_state
+        """:type: pyote.utils.State"""
         self.inserts = inserts
+        """:type: pyote.utils.InsertOperationNode"""
         self.deletes = deletes
+        """:type: pyote.utils.DeleteOperationNode"""
 
     def __repr__(self):
         return "inserts: {}\ndeletes: {}".format(self._print_nodes(self.inserts), self._print_nodes(self.deletes))
@@ -43,6 +53,78 @@ class OperationNode(object):
             return self.value
         else:
             return self.next[item - 1]
+
+    def to_list(self):
+        """
+        Converts a linked list to a standard python list
+        :param OperationNode self: The linked list to convert
+        :return: The converted list
+        :rtype: list
+        """
+        lst = []
+        node = self
+        while node:
+            lst.append(node.value)
+            node = node.next
+        return lst
+
+
+class InsertOperationNode(OperationNode):
+    __slots__ = ["value", "next"]
+
+    def __init__(self, value):
+        """
+        Create a new node in a linked list of InsertionOperations
+        :param pyote.operations.InsertOperation value: The value this node holds
+        """
+        OperationNode.__init__(self, value)
+
+    @classmethod
+    def from_list(cls, lst):
+        """
+        Converts a standard python list into a linked list that the engine can use
+        :param list[InsertOperation] lst: The list to convert
+        :return: A linked list
+        :rtype: pyote.utils.InsertOperationNode
+        """
+        if len(lst) == 0:
+            return None
+        llist = InsertOperationNode(lst.pop(0))
+        head = llist
+        for op in lst:
+            llist.next = InsertOperationNode(op)
+            llist = llist.next
+
+        return head
+
+
+class DeleteOperationNode(OperationNode):
+    __slots__ = ["value", "next"]
+
+    def __init__(self, value):
+        """
+        Create a new node in a linked list of DeleteOperations
+        :param pyote.operations.DeleteOperation value: The value this node holds
+        """
+        OperationNode.__init__(self, value)
+
+    @classmethod
+    def from_list(cls, lst):
+        """
+        Converts a standard python list into a linked list that the engine can use
+        :param list[DeleteOperation] lst: The list to convert
+        :return: A linked list
+        :rtype: DeleteOperationNode
+        """
+        if len(lst) == 0:
+            return None
+        llist = DeleteOperationNode(lst.pop(0))
+        head = llist
+        for op in lst:
+            llist.next = DeleteOperationNode(op)
+            llist = llist.next
+
+        return head
 
 
 class State(object):

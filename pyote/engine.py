@@ -22,39 +22,59 @@ class Engine(object):
 
         #: The inserts for this site stored in effect order as a linked list
         self._inserts = None
+        """:type: pyote.utils.InsertOperationNode"""
         #: The deletes for this site stored in effect order as a linked list
         self._deletes = None
+        """:type: pyote.utils.DeleteOperationNode"""
         #: The unique id for this site
         self.site_id = site_id
+        """:type: int"""
 
     def integrate_remote(self, remote_sequence):
         """
         Integrates the sequence of operations given by `remote_sequence` into the local history.  The ordering
         properties of the local history (see :meth:__init__) will be maintained, and a sequence of operations that
         can be applied to the local state will be returned.
-        :param remote_sequence: A transaction sequence representing the operation to integrate into local history
+        :param remote_sequence: A transaction sequence representing the operations to integrate into local history
         :type remote_sequence: pyote.utils.TransactionSequence
+        :return: A Transaction Sequence that can be applied to the local data
         :rtype: pyote.utils.TransactionSequence
         """
+
+        # Get all the local inserts that have happened since the last sync with the remote site
         local_concurrent_inserts = self._get_concurrent(remote_sequence.starting_state, self._inserts)
+
+        # Transform the remote inserts so that they account for the changes from the local inserts
         transformed_remote_inserts = self._transform_insert_insert(remote_sequence.inserts, local_concurrent_inserts)
+
+        # Transform the remote inserts so that they account for the changes from the local deletes
         new_remote_inserts = self._transform_insert_delete(transformed_remote_inserts, self._deletes)
+
+        # Merge the transformed remote inserts with the local.  Note that we use the inserts that have not been
+        # transformed by deletes, as the local inserts always preceded the deletes.
         self._inserts = self._merge_sequence(self._inserts, transformed_remote_inserts)
 
+        # Adjust the local deletes with the remote inserts that have been merged into the local inserts
         transformed_local_deletes = self._transform_delete_insert(self._deletes, transformed_remote_inserts)
+
+        # Transform the remote deletes with all of the local inserts that happened since the last sync
         transformed_remote_deletes = self._transform_delete_insert(remote_sequence.deletes, local_concurrent_inserts)
+
+        # Transform the remote deletes with ALL of the local deletes.
         new_remote_deletes = self._transform_delete_delete(transformed_remote_deletes, transformed_local_deletes)
+
+        # Merge the remote deletes that have taken all the local operations into effect with the local deletes
         self._deletes = self._merge_sequence(transformed_local_deletes, new_remote_deletes)
 
         return TransactionSequence(remote_sequence.starting_state, new_remote_inserts, new_remote_deletes)
 
-    def _get_concurrent(self, starting_state, remote_sequence):
+    def _get_concurrent(self, starting_state, insert_sequence):
         """
         Gets all operations in the insertion sequence which happened after the given starting state
         :param pyote.utils.State starting_state: The state to use as a reference
-        :param  remote_sequence: The sequence of events to look for events within
-        :type remote_sequence: list[pyote.operations.DeleteOperation] | list[pyote.operations.InsertOperation]
-        :rtype: pyote.utils.OperationNode
+        :param  insert_sequence: The sequence of events to look for events within
+        :type insert_sequence: pyote.utils.InsertOperationNode
+        :rtype: pyote.utils.InsertOperationNode
         """
         local_ref = -1
         # Look through all operations in our history
@@ -89,7 +109,7 @@ class Engine(object):
         # Find all the operations in the insertion sequence which happened after local_ref
         concurrents = None
         concurrent_head = concurrents
-        node = remote_sequence
+        node = insert_sequence
 
         while node:
             if node.value.state.local_time > local_ref:
@@ -107,11 +127,11 @@ class Engine(object):
         """
         Performs inclusive transformation on sequence1 with sequence2, meaning that the effects of `existing sequence`
         are incorporated in `incoming_sequence`
-        :param pyote.utils.OperationNode incoming_sequence: The sequence that will be transformed
-        :param pyote.utils.OperationNode existing_sequence: The sequence with operations that will perform the
+        :param pyote.utils.InsertOperationNode incoming_sequence: The sequence that will be transformed
+        :param pyote.utils.InsertOperationNode existing_sequence: The sequence with operations that will perform the
                                                                    transformation
         :returns: The incoming sequence with the operations in the existing sequence taken into account
-        :rtype: pyote.utils.OperationNode
+        :rtype: pyote.utils.InsertOperationNode
         """
         incoming_value_size = 0
         existing_value_size = 0
@@ -164,11 +184,11 @@ class Engine(object):
         """
         Performs inclusive transformation on sequence1 with sequence2, meaning that the effects of `existing sequence`
         are incorporated in `incoming_sequence`
-        :param pyote.utils.OperationNode incoming_sequence: The sequence that will be transformed
-        :param pyote.utils.OperationNode existing_sequence: The sequence with operations that will perform the
+        :param pyote.utils.DeleteOperationNode incoming_sequence: The sequence that will be transformed
+        :param pyote.utils.InsertOperationNode existing_sequence: The sequence with operations that will perform the
                                                                    transformation
         :returns: The incoming sequence with the operations in the existing sequence taken into account
-        :rtype: pyote.utils.OperationNode
+        :rtype: pyote.utils.DeleteOperationNode
         """
         incoming_value_size = 0
         existing_value_size = 0
@@ -221,11 +241,11 @@ class Engine(object):
         """
         Performs inclusive transformation on `incoming_sequence` with `existing_sequence`, meaning that the effects of
         `existing sequence` are incorporated in `incoming_sequence`
-        :param pyote.utils.OperationNode incoming_sequence: The sequence that will be transformed
-        :param pyote.utils.OperationNode existing_sequence: The sequence with operations that will perform the
+        :param pyote.utils.InsertOperationNode incoming_sequence: The sequence that will be transformed
+        :param pyote.utils.DeleteOperationNode existing_sequence: The sequence with operations that will perform the
                                                                    transformation
         :returns: A copy of `incoming_sequence` with the operations in the existing sequence taken into account
-        :rtype: pyote.utils.OperationNode
+        :rtype: pyote.utils.InsertOperationNode
         """
         incoming_value_size = 0
         existing_value_size = 0
@@ -284,11 +304,11 @@ class Engine(object):
         """
         Performs inclusive transformation on sequence1 with sequence2, meaning that the effects of `existing sequence`
         are incorporated in `incoming_sequence`
-        :param pyote.utils.OperationNode incoming_sequence: The sequence that will be transformed
-        :param pyote.utils.OperationNode existing_sequence: The sequence with operations that will perform the
+        :param pyote.utils.DeleteOperationNode incoming_sequence: The sequence that will be transformed
+        :param pyote.utils.DeleteOperationNode existing_sequence: The sequence with operations that will perform the
                                                                    transformation
         :returns: The incoming sequence with the operations in the existing sequence taken into account
-        :rtype: pyote.utils.OperationNode
+        :rtype: pyote.utils.DeleteOperationNode
         """
         existing_value_size = 0
         incoming_value_size = 0

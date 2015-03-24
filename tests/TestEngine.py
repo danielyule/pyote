@@ -2,7 +2,7 @@ import random
 from unittest import TestCase
 from pyote.engine import Engine
 from pyote.operations import InsertOperation, DeleteOperation
-from pyote.utils import TransactionSequence, OperationNode, State
+from pyote.utils import TransactionSequence, State, InsertOperationNode, DeleteOperationNode
 
 
 def get_dummy_state(site_id):
@@ -14,44 +14,11 @@ def get_dummy_state(site_id):
     return State(site_id, time_stamp, time_stamp)
 
 
-def convert_to_linked_list(lst):
-    """
-    Converts a standard python list into a linked list that the engine can use
-    :param list lst: The list to convert
-    :return: A linked list
-    :rtype: OperationNode
-    """
-    if len(lst) == 0:
-        return None
-    llist = OperationNode(lst.pop(0))
-    head = llist
-    for op in lst:
-        llist.next = OperationNode(op)
-        llist = llist.next
-
-    return head
-
-
-def convert_from_linked_list(llist):
-    """
-    Converts a linked list to a standard python list
-    :param OperationNode llist: The linked list to convert
-    :return: The converted list
-    :rtype: list
-    """
-    lst = []
-    node = llist
-    while node:
-        lst.append(node.value)
-        node = node.next
-    return lst
-
-
 class EngineTests(TestCase):
 
     def test_get_concurrent(self):
         engine = Engine(1)
-        engine._inserts = convert_to_linked_list([
+        engine._inserts = InsertOperationNode.from_list([
             InsertOperation(2, 1, State(1, 3, 2)),
             InsertOperation(6, 3, State(2, 2, 5)),
             InsertOperation(8, 4, State(1, 7, 4)),
@@ -61,7 +28,7 @@ class EngineTests(TestCase):
             InsertOperation(20, 3, State(2, 10, 16)),
             InsertOperation(21, 2, State(1, 11, 20)),
         ])
-        result = convert_from_linked_list(engine._get_concurrent(State(1, 5, 3), engine._inserts))
+        result = engine._get_concurrent(State(1, 5, 3), engine._inserts).to_list()
         self.assertEqual(result, [
             InsertOperation(8, 4, State(1, 7, 4)),
             InsertOperation(15, 7, State(6, 6, 4)),
@@ -74,7 +41,7 @@ class EngineTests(TestCase):
         engine = Engine(1)
         # Starting with the buffer "The quick brown fox"
         states = [get_dummy_state(2), get_dummy_state(2), get_dummy_state(2), get_dummy_state(2)]
-        sequence1 = [
+        sequence1 = InsertOperationNode.from_list([
             # Add an "ee" after "the"
             InsertOperation(3, "ee", states[0]),
             # Add another "k" on the end of "quick"
@@ -83,20 +50,18 @@ class EngineTests(TestCase):
             InsertOperation(18, "wnwnwn", states[2]),
             # Add "xx!" to the end of "fox"
             InsertOperation(28, "xx!", states[3]),
-        ]
+        ])
         # After sequence1 is applied, we would have "Theee quickk brownwnwnwn foxxx!"
-        sequence2 = [
+        sequence2 = InsertOperationNode.from_list([
             # insert "very " after "the"
             InsertOperation(4, "very ", get_dummy_state(1)),
             # insert "ly" after "quick"
             InsertOperation(14, "ly", get_dummy_state(1)),
             # insert "u" after the 'o' in "brown"
             InsertOperation(20, "u", get_dummy_state(1)),
-        ]
+        ])
         # After sequence2 is applied, we would have "The very quickly brouwn fox"
-        self.assertListEqual(convert_from_linked_list(engine._transform_insert_insert(convert_to_linked_list(sequence1),
-                                                                                      convert_to_linked_list(sequence2))
-                                                      ), [
+        self.assertListEqual(engine._transform_insert_insert(sequence1, sequence2).to_list(), [
             # Add an "ee" after "the"
             InsertOperation(3, "ee", states[0]),
             # Add another "k" on the end of "quickly"
@@ -111,7 +76,7 @@ class EngineTests(TestCase):
     def test_transform_delete_insert(self):
         engine = Engine(1)
         # Starting with the buffer "The very quickly brouwn fox"
-        sequence1 = convert_to_linked_list([
+        sequence1 = DeleteOperationNode.from_list([
             # delete the "e" from "the"
             DeleteOperation(2, 1, get_dummy_state(1)),
             # delete the "e" from "very"
@@ -124,7 +89,7 @@ class EngineTests(TestCase):
             DeleteOperation(19, 1, get_dummy_state(1)),
         ])
         # after sequence1 is applied, we would have "Th vry qckly brwn fx"
-        sequence2 = convert_to_linked_list([
+        sequence2 = InsertOperationNode.from_list([
             # Add an "ee" after "the"
             InsertOperation(3, "ee", get_dummy_state(2)),
             # Add another "k" on the end of "quickly"
@@ -135,7 +100,7 @@ class EngineTests(TestCase):
             InsertOperation(36, "xx!", get_dummy_state(2)),
         ])
         # After sequence2 is applied, we will have "Theee very quicklyk brouwnwnwnwn foxxx!"
-        results = convert_from_linked_list(engine._transform_delete_insert(sequence1, sequence2))
+        results = engine._transform_delete_insert(sequence1, sequence2).to_list()
         self.assertEqual(results, [
             # delete the first "e" from "theee"
             DeleteOperation(2, 1, get_dummy_state(1)),
@@ -155,7 +120,7 @@ class EngineTests(TestCase):
         # Starting with buffer "The quick brown fox jumped over the lazy dog"
         states1 = [get_dummy_state(2), get_dummy_state(2), get_dummy_state(2)]
         states2 = [get_dummy_state(1), get_dummy_state(1), get_dummy_state(1), get_dummy_state(1)]
-        sequence1 = convert_to_linked_list([
+        sequence1 = DeleteOperationNode.from_list([
             # Delete "quick bro"
             DeleteOperation(4, 9, states1[0]),
             # Delete "ed over"
@@ -164,7 +129,7 @@ class EngineTests(TestCase):
             DeleteOperation(20, 3, states1[2]),
         ])
         # After sequence1 is applied, we will have "The wn fox jump the y dog"
-        sequence2 = convert_to_linked_list([
+        sequence2 = DeleteOperationNode.from_list([
             # Delete "he qu"
             DeleteOperation(1, 5, states2[0]),
             # Delete "ck"
@@ -176,7 +141,7 @@ class EngineTests(TestCase):
         ])
         # After sequence2 is applied, we will have "Ti b fox jumped over"
 
-        self.assertEqual(engine._transform_delete_delete(sequence1, sequence2), convert_to_linked_list([
+        self.assertEqual(engine._transform_delete_delete(sequence1, sequence2).to_list(), [
             # Delete "i"
             DeleteOperation(1, 1, states1[0]),
             # Delete " b"
@@ -185,9 +150,9 @@ class EngineTests(TestCase):
             DeleteOperation(10, 7, states1[1]),
             # Delete ""
             DeleteOperation(11, 0, states1[2]),
-        ]))
+        ])
         # After both sequences are applied, we will have "T fox jump "
-        self.assertEqual(engine._transform_delete_delete(sequence2, sequence1), convert_to_linked_list([
+        self.assertEqual(engine._transform_delete_delete(sequence2, sequence1).to_list(), [
             # Delete "he "
             DeleteOperation(1, 3, states2[0]),
             # Delete ""
@@ -198,14 +163,14 @@ class EngineTests(TestCase):
             DeleteOperation(11, 4, states2[3]),
             # Delete "y dog"
             DeleteOperation(11, 5, states2[3]),
-            ]))
+            ])
 
     def test_transform_delete_delete_with_0_length_deletes(self):
         engine = Engine(1)
         # Starting with buffer "The quick brown fox jumped over the lazy dog"
         states1 = [get_dummy_state(2), get_dummy_state(2), get_dummy_state(2), get_dummy_state(2)]
         states2 = [get_dummy_state(1), get_dummy_state(1), get_dummy_state(1), get_dummy_state(1), get_dummy_state(1)]
-        sequence1 = convert_to_linked_list([
+        sequence1 = DeleteOperationNode.from_list([
             # Delete "h"
             DeleteOperation(1, 1, states1[0]),
             # Delete "" after "T"
@@ -216,7 +181,7 @@ class EngineTests(TestCase):
             DeleteOperation(11, 0, states1[3]),
             ])
         # After sequence1 is applied, we will have "Te quibrown fox jumped over the lazy dog"
-        sequence2 = convert_to_linked_list([
+        sequence2 = DeleteOperationNode.from_list([
             # Delete "e"
             DeleteOperation(2, 1, states2[0]),
             # Delete "c"
@@ -229,8 +194,8 @@ class EngineTests(TestCase):
             DeleteOperation(28, 1, states2[4]),
             ])
         # After sequence2 is applied, we will have "Th quik brn fox jued over thelazy dog"
-        result = engine._transform_delete_delete(sequence2, sequence1)
-        self.assertEqual(convert_from_linked_list(result), [
+        result = engine._transform_delete_delete(sequence2, sequence1).to_list()
+        self.assertEqual(result, [
             # Delete "e"
             DeleteOperation(1, 1, states2[0]),
             # Delete "" (was delete "c")
@@ -246,7 +211,7 @@ class EngineTests(TestCase):
     def test_transform_delete_delete_simple(self):
         engine = Engine(1)
         # starting with buffer "The quick brown fox jumped over the lazy dog"
-        sequence1 = convert_to_linked_list([
+        sequence1 = DeleteOperationNode.from_list([
             # Delete "The"
             DeleteOperation(0, 3, get_dummy_state(1)),
             # Delete "brown"
@@ -259,7 +224,7 @@ class EngineTests(TestCase):
             DeleteOperation(24, 3, get_dummy_state(1)),
         ])
         # After these operations run, we will have " quick  fox  over  lazy "
-        sequence2 = convert_to_linked_list([
+        sequence2 = DeleteOperationNode.from_list([
             # Delete "quick"
             DeleteOperation(4, 5, get_dummy_state(2)),
             # Delete "fox"
@@ -271,8 +236,8 @@ class EngineTests(TestCase):
         ])
         # After these operations, we will have "The  brown  jumped  the  dog"
 
-        result = engine._transform_delete_delete(sequence1, sequence2)
-        self.assertEqual(convert_from_linked_list(result), [
+        result = engine._transform_delete_delete(sequence1, sequence2).to_list()
+        self.assertEqual(result, [
             # Delete "The"
             DeleteOperation(0, 3, get_dummy_state(1)),
             # Delete "brown"
@@ -285,8 +250,8 @@ class EngineTests(TestCase):
             DeleteOperation(8, 3, get_dummy_state(1)),
         ])
 
-        result = engine._transform_delete_delete(sequence2, sequence1)
-        self.assertEqual(convert_from_linked_list(result), [
+        result = engine._transform_delete_delete(sequence2, sequence1).to_list()
+        self.assertEqual(result, [
             # Delete "quick"
             DeleteOperation(1, 5, get_dummy_state(2)),
             # Delete "fox"
@@ -300,7 +265,7 @@ class EngineTests(TestCase):
     def test_merge_sequence_inserts(self):
         engine = Engine(1)
         # Starting with the buffer "The quick brown fox"
-        sequence1 = convert_to_linked_list([
+        sequence1 = InsertOperationNode.from_list([
             # insert "very " after "the"
             InsertOperation(4, "very ", get_dummy_state(1)),
             # insert "ly" after "quick"
@@ -309,7 +274,7 @@ class EngineTests(TestCase):
             InsertOperation(20, "u", get_dummy_state(1)),
         ])
 
-        sequence2 = convert_to_linked_list([
+        sequence2 = InsertOperationNode.from_list([
             # Add an "ee" after "the"
             InsertOperation(3, "ee", get_dummy_state(2)),
             # Add another "k" on the end of "quickly"
@@ -320,7 +285,7 @@ class EngineTests(TestCase):
             InsertOperation(36, "xx!", get_dummy_state(2)),
         ])
 
-        result = convert_from_linked_list(engine._merge_sequence(sequence1, sequence2))
+        result = engine._merge_sequence(sequence1, sequence2).to_list()
         self.assertListEqual(result, [
             # Add an "ee" after "the"
             InsertOperation(3, "ee", sequence2[0].state),
@@ -340,7 +305,7 @@ class EngineTests(TestCase):
 
     def test_integrate_sequences(self):
         engine = Engine(1)
-        engine._inserts = convert_to_linked_list([
+        engine._inserts = InsertOperationNode.from_list([
             InsertOperation(0, "The quick brown fox", State(1, 0, 0)),
             # insert "very " after "the"
             InsertOperation(4, "very ", get_dummy_state(1)),
@@ -351,7 +316,7 @@ class EngineTests(TestCase):
         ])
         # After the inserts are applied, we would have "The very quickly brouwn fox"
 
-        engine._deletes = convert_to_linked_list([
+        engine._deletes = DeleteOperationNode.from_list([
             # delete the "e" from "the"
             DeleteOperation(2, 1, get_dummy_state(1)),
             # delete the "e" from "very"
@@ -366,7 +331,7 @@ class EngineTests(TestCase):
 
         # After the deletes are applied, we would have "Th vry qckly brwn fx"
 
-        sequence = TransactionSequence(State(1, 0, 0), convert_to_linked_list([
+        sequence = TransactionSequence(State(1, 0, 0), InsertOperationNode.from_list([
             # Add an "ee" after "the"
             InsertOperation(3, "ee", get_dummy_state(2)),
             # Add another "k" on the end of "quick"
@@ -375,7 +340,7 @@ class EngineTests(TestCase):
             InsertOperation(18, "wnwnwn", get_dummy_state(2)),
             # Add "xx!" to the end of "fox"
             InsertOperation(28, "xx!", get_dummy_state(2)),
-        ]), convert_to_linked_list([  # After the inserts, we would have "Theee quickk brownwnwnwn foxxx!"
+        ]), DeleteOperationNode.from_list([  # After the inserts, we would have "Theee quickk brownwnwnwn foxxx!"
             # Delete the "he" from "theee"
             DeleteOperation(1, 2, get_dummy_state(2)),
             # Delete "bro" from "brownwnwnwn"
@@ -387,7 +352,7 @@ class EngineTests(TestCase):
 
         new_transaction = engine.integrate_remote(sequence)
 
-        self.assertListEqual(convert_from_linked_list(new_transaction.inserts), [
+        self.assertListEqual(new_transaction.inserts.to_list(), [
             # Add an "ee" after "th"
             InsertOperation(2, "ee", sequence.inserts[0].state),
             # Add a "k" after "qckly"
@@ -398,7 +363,7 @@ class EngineTests(TestCase):
             InsertOperation(29, "xx!", sequence.inserts[3].state)
         ])
         # After these are applied, we would have "Thee vry qcklyk brwnwnwnwn fxxx!"
-        self.assertListEqual(convert_from_linked_list(new_transaction.deletes), [
+        self.assertListEqual(new_transaction.deletes.to_list(), [
             # Delete the "h" in "thee"
             DeleteOperation(1, 1, sequence.inserts[0].state),
             # Delete "" after "t"
@@ -410,7 +375,7 @@ class EngineTests(TestCase):
         ])
         # After these are applied, we would have "Tee vry qcklyk wnwnwnwn xxx!"
 
-        self.assertEqual(convert_from_linked_list(engine._inserts), [
+        self.assertEqual(engine._inserts.to_list(), [
             InsertOperation(0, "The quick brown fox", State(1, 0, 0)),
             # Add an "ee" after "the"
             InsertOperation(3, "ee", sequence.inserts[0].state),
@@ -429,7 +394,7 @@ class EngineTests(TestCase):
 
         ])
         # After all the inserts are applied, we should have "Theee very quicklyk brouwnwnwnwn foxxx!"
-        self.assertEqual(convert_from_linked_list(engine._deletes), [
+        self.assertEqual(engine._deletes.to_list(), [
             # Delete the "h" from "thee"
             DeleteOperation(1, 1, get_dummy_state(2)),
             # delete the first "e" from "teee"
