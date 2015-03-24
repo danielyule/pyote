@@ -1,7 +1,8 @@
 import random
 from unittest import TestCase
-from pyote.engine import State, Engine, TransactionSequence, OperationNode
+from pyote.engine import Engine
 from pyote.operations import InsertOperation, DeleteOperation
+from pyote.utils import TransactionSequence, OperationNode, State
 
 
 def get_dummy_state(site_id):
@@ -30,6 +31,7 @@ def convert_to_linked_list(lst):
 
     return head
 
+
 def convert_from_linked_list(llist):
     """
     Converts a linked list to a standard python list
@@ -43,6 +45,7 @@ def convert_from_linked_list(llist):
         lst.append(node.value)
         node = node.next
     return lst
+
 
 class EngineTests(TestCase):
 
@@ -66,7 +69,6 @@ class EngineTests(TestCase):
             InsertOperation(20, 3, State(2, 10, 16)),
             InsertOperation(21, 2, State(1, 11, 20)),
         ])
-
 
     def test_transform_insert_insert(self):
         engine = Engine(1)
@@ -92,7 +94,9 @@ class EngineTests(TestCase):
             InsertOperation(20, "u", get_dummy_state(1)),
         ]
         # After sequence2 is applied, we would have "The very quickly brouwn fox"
-        self.assertListEqual(convert_from_linked_list(engine._transform_insert_insert(convert_to_linked_list(sequence1), convert_to_linked_list(sequence2))), [
+        self.assertListEqual(convert_from_linked_list(engine._transform_insert_insert(convert_to_linked_list(sequence1),
+                                                                                      convert_to_linked_list(sequence2))
+                                                      ), [
             # Add an "ee" after "the"
             InsertOperation(3, "ee", states[0]),
             # Add another "k" on the end of "quickly"
@@ -144,7 +148,7 @@ class EngineTests(TestCase):
             # delete the "o" from "foxxx!"
             DeleteOperation(28, 1, get_dummy_state(1)),
         ])
-        #After running sequence1 then sequence2, we get "Thee vry qcklyk brwnwnwnwn fxxx!"
+        # After running sequence1 then sequence2, we get "Thee vry qcklyk brwnwnwnwn fxxx!"
 
     def test_transform_delete_delete(self):
         engine = Engine(1)
@@ -376,7 +380,7 @@ class EngineTests(TestCase):
             DeleteOperation(1, 2, get_dummy_state(2)),
             # Delete "bro" from "brownwnwnwn"
             DeleteOperation(11, 3, get_dummy_state(2)),
-            #Delete "f" from "foxxx"
+            # Delete "f" from "foxxx"
             DeleteOperation(20, 1, get_dummy_state(2))
         ]))
         # After the deletes, we would have "Tee quickk wnwnwnwn oxxx!"
@@ -393,7 +397,7 @@ class EngineTests(TestCase):
             # Add "xx!" after "fx"
             InsertOperation(29, "xx!", sequence.inserts[3].state)
         ])
-        #After these are applied, we would have "Thee vry qcklyk brwnwnwnwn fxxx!"
+        # After these are applied, we would have "Thee vry qcklyk brwnwnwnwn fxxx!"
         self.assertListEqual(convert_from_linked_list(new_transaction.deletes), [
             # Delete the "h" in "thee"
             DeleteOperation(1, 1, sequence.inserts[0].state),
@@ -404,7 +408,7 @@ class EngineTests(TestCase):
             # Delete "f"
             DeleteOperation(24, 1, sequence.inserts[3].state)
         ])
-        #After these are applied, we would have "Tee vry qcklyk wnwnwnwn xxx!"
+        # After these are applied, we would have "Tee vry qcklyk wnwnwnwn xxx!"
 
         self.assertEqual(convert_from_linked_list(engine._inserts), [
             InsertOperation(0, "The quick brown fox", State(1, 0, 0)),
@@ -440,7 +444,7 @@ class EngineTests(TestCase):
             DeleteOperation(15, 2, get_dummy_state(2)),
             # delete the "ou" from "brouwn"
             DeleteOperation(15, 2, get_dummy_state(1)),
-            #Delete "f" from "foxxx!"
+            # Delete "f" from "foxxx!"
             DeleteOperation(24, 1, get_dummy_state(2)),
             # delete the "o" from "oxxx!"
             DeleteOperation(24, 1, get_dummy_state(1)),
