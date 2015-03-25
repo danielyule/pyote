@@ -499,7 +499,7 @@ class EngineTests(TestCase):
             DeleteOperation(18, 3, get_dummy_state(1)),
             # Delete "dog"
             DeleteOperation(24, 3, get_dummy_state(1)),
-            ])
+        ])
 
         self.assertEqual(updated_sq2.to_list(), [
             # Delete "quick"
@@ -510,6 +510,53 @@ class EngineTests(TestCase):
             DeleteOperation(5, 4, get_dummy_state(2)),
             # Delete "lazy"
             DeleteOperation(7, 4, get_dummy_state(2)),
+        ])
+
+    def test_swap_delete_delete_with_overlap(self):
+        engine = Engine(1)
+        # starting with buffer "The quick brown fox jumped over the lazy dog"
+        sequence1 = DeleteOperationNode.from_list([
+            # Delete "The  brown"
+            DeleteOperation(0, 10, get_dummy_state(1)),
+            # Delete "jumped  the  dog"
+            DeleteOperation(2, 16, get_dummy_state(1)),
+            ])
+        # After these operations run, we will have " "
+        sequence2 = DeleteOperationNode.from_list([
+            # Delete "quick"
+            DeleteOperation(4, 5, get_dummy_state(2)),
+            # Delete "fox"
+            DeleteOperation(11, 3, get_dummy_state(2)),
+            # Delete "over"
+            DeleteOperation(19, 4, get_dummy_state(2)),
+            # Delete "lazy"
+            DeleteOperation(24, 4, get_dummy_state(2)),
+            ])
+        # After these operations, we will have "The  brown  jumped  the  dog"
+
+        updated_sq1, updated_sq2 = engine._swap_sequence_delete_delete(sequence2, sequence1)
+        self.assertEqual(updated_sq1.to_list(), [
+            # Delete "The "
+            DeleteOperation(0, 4, get_dummy_state(1)),
+            # Delete " brown"
+            DeleteOperation(5, 6, get_dummy_state(1)),
+            # Delete "jumped "
+            DeleteOperation(10, 7, get_dummy_state(1)),
+            # Delete " the "
+            DeleteOperation(14, 5, get_dummy_state(1)),
+            # Delete " dog"
+            DeleteOperation(18, 4, get_dummy_state(1)),
+            ])
+        # After these, we will have "quick fox overlazy"
+        self.assertEqual(updated_sq2.to_list(), [
+            # Delete "quick"
+            DeleteOperation(0, 5, get_dummy_state(2)),
+            # Delete "fox"
+            DeleteOperation(1, 3, get_dummy_state(2)),
+            # Delete "over"
+            DeleteOperation(2, 4, get_dummy_state(2)),
+            # Delete "lazy"
+            DeleteOperation(2, 4, get_dummy_state(2)),
             ])
 
     def test_process_transaction(self):

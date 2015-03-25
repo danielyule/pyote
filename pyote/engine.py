@@ -562,14 +562,14 @@ class Engine(object):
         size1 = 0
         size2 = 0
         while node1 and node2:
-            if node2.value.position <= node1.value.position - size1:
+            if node2.value.position <= node1.value.position + size1:
                 if new_sequence2:
                     new_node2.next = copy(node2)
                     new_node2 = new_node2.next
                 else:
                     new_node2 = copy(node2)
                     new_sequence2 = new_node2
-                new_node2.value.position += size1
+                new_node2.value.position -= size1
                 size2 -= node2.value.get_increment()
                 node2 = node2.next
             else:
@@ -579,9 +579,17 @@ class Engine(object):
                 else:
                     new_node1 = copy(node1)
                     new_sequence1 = new_node1
+                next_node = node1.next
+                if node1.value.position + size1 + node1.value.length > node2.value.position:
+                    new_node1.value.length = node2.value.position - node1.value.position - size1
+                    next_node = DeleteOperationNode(DeleteOperation(node1.value.position,
+                                                                    node1.value.length - new_node1.value.length,
+                                                                    copy(new_node1.value.state)))
+                    next_node.next = node1.next
+
                 new_node1.value.position += size2
-                size1 -= node1.value.get_increment()
-                node1 = node1.next
+                size1 -= new_node1.value.get_increment()
+                node1 = next_node
         while node1:
             if new_sequence1:
                 new_node1.next = copy(node1)
