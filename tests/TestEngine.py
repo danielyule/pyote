@@ -260,7 +260,7 @@ class EngineTests(TestCase):
             DeleteOperation(5, 4, get_dummy_state(2)),
             # Delete "lazy"
             DeleteOperation(7, 4, get_dummy_state(2)),
-            ])
+        ])
 
     def test_merge_sequence_inserts(self):
         engine = Engine(1)
@@ -416,4 +416,209 @@ class EngineTests(TestCase):
 
 
         ])
+        # After all the deletes are applied, we should have "Tee vry qcklyk wnwnwnwn xxx!"
+
+    def test_swap_sequence_delete_insert(self):
+        engine = Engine(1)
+        # Starting with the buffer "The quick brown fox"
+        sequence1 = InsertOperationNode.from_list([
+            # insert "very " after "t "
+            InsertOperation(2, "very ", get_dummy_state(1)),
+            # insert "ly" after "quick"
+            InsertOperation(12, "ly", get_dummy_state(1)),
+            # insert "u" before the 'w'  in "wn"
+            InsertOperation(15, "u", get_dummy_state(1)),
+        ])
+        # After this runs, we will have "T very quickly uwn ox"
+        sequence2 = DeleteOperationNode.from_list([
+            # Delete the "he" from "the"
+            DeleteOperation(1, 2, get_dummy_state(2)),
+            # Delete "bro" from "brown"
+            DeleteOperation(8, 3, get_dummy_state(2)),
+            # Delete "f" from "fox"
+            DeleteOperation(11, 1, get_dummy_state(2))
+        ])
+        # After this runs, we will have  "T quick wn ox"
+        updated_sq1, updated_sq2 = engine._swap_sequence_delete_insert(sequence2, sequence1)
+        self.assertEqual(updated_sq1.to_list(), [
+            # insert "very " after "the "
+            InsertOperation(4, "very ", get_dummy_state(1)),
+            # insert "ly" after "quick"
+            InsertOperation(14, "ly", get_dummy_state(1)),
+            # insert "u" after the 'o' in "brown"
+            InsertOperation(20, "u", get_dummy_state(1)),
+        ])
+        # After this runs, we will have "The very quickly brouwn fox"
+        self.assertEqual(updated_sq2.to_list(), [
+            # Delete the "he" from "the"
+            DeleteOperation(1, 2, get_dummy_state(2)),
+            # Delete "bro" from "brouwn"
+            DeleteOperation(15, 3, get_dummy_state(2)),
+            # Delete "f" from "fox"
+            DeleteOperation(19, 1, get_dummy_state(2))
+        ])
+        # After this runs, we will have "T very quickly uwn ox"
+
+    def test_swap_sequence_delete_delete(self):
+        engine = Engine(1)
+        # starting with buffer "The quick brown fox jumped over the lazy dog"
+        sequence1 = DeleteOperationNode.from_list([
+            # Delete "The"
+            DeleteOperation(0, 3, get_dummy_state(1)),
+            # Delete "brown"
+            DeleteOperation(2, 5, get_dummy_state(1)),
+            # Delete "jumped"
+            DeleteOperation(4, 6, get_dummy_state(1)),
+            # Delete "the"
+            DeleteOperation(6, 3, get_dummy_state(1)),
+            # Delete "dog"
+            DeleteOperation(8, 3, get_dummy_state(1)),
+        ])
+        # After these operations run, we will have " quick  fox  over  lazy "
+        sequence2 = DeleteOperationNode.from_list([
+            # Delete "quick"
+            DeleteOperation(4, 5, get_dummy_state(2)),
+            # Delete "fox"
+            DeleteOperation(11, 3, get_dummy_state(2)),
+            # Delete "over"
+            DeleteOperation(19, 4, get_dummy_state(2)),
+            # Delete "lazy"
+            DeleteOperation(24, 4, get_dummy_state(2)),
+            ])
+        # After these operations, we will have "The  brown  jumped  the  dog"
+
+        updated_sq1, updated_sq2 = engine._swap_sequence_delete_delete(sequence2, sequence1)
+        self.assertEqual(updated_sq1.to_list(), [
+            # Delete "The"
+            DeleteOperation(0, 3, get_dummy_state(1)),
+            # Delete "brown"
+            DeleteOperation(7, 5, get_dummy_state(1)),
+            # Delete "jumped"
+            DeleteOperation(12, 6, get_dummy_state(1)),
+            # Delete "the"
+            DeleteOperation(18, 3, get_dummy_state(1)),
+            # Delete "dog"
+            DeleteOperation(24, 3, get_dummy_state(1)),
+            ])
+
+        self.assertEqual(updated_sq2.to_list(), [
+            # Delete "quick"
+            DeleteOperation(1, 5, get_dummy_state(2)),
+            # Delete "fox"
+            DeleteOperation(3, 3, get_dummy_state(2)),
+            # Delete "over"
+            DeleteOperation(5, 4, get_dummy_state(2)),
+            # Delete "lazy"
+            DeleteOperation(7, 4, get_dummy_state(2)),
+            ])
+
+    def test_process_transaction(self):
+        engine = Engine(1)
+        engine._inserts = InsertOperationNode.from_list([
+            InsertOperation(0, "The quick brown fox", State(1, 0, 0)),
+            # insert "very " after "the"
+            InsertOperation(4, "very ", get_dummy_state(1)),
+            # insert "ly" after "quick"
+            InsertOperation(14, "ly", get_dummy_state(1)),
+            # insert "u" after the 'o' in "brown"
+            InsertOperation(20, "u", get_dummy_state(1)),
+            ])
+        # After the inserts are applied, we would have "The very quickly brouwn fox"
+
+        engine._deletes = DeleteOperationNode.from_list([
+            # delete the "e" from "the"
+            DeleteOperation(2, 1, get_dummy_state(1)),
+            # delete the "e" from "very"
+            DeleteOperation(4, 1, get_dummy_state(1)),
+            # delete the "ui" from "quickly"
+            DeleteOperation(8, 2, get_dummy_state(1)),
+            # delete the "ou" from "brouwn"
+            DeleteOperation(15, 2, get_dummy_state(1)),
+            # delete the "o" from "fox"
+            DeleteOperation(19, 1, get_dummy_state(1)),
+        ])
+
+        # After the deletes are applied, we would have "Th vry qckly brwn fx"
+
+        sequence = TransactionSequence(State(1, 0, 0), InsertOperationNode.from_list([
+            # Add an "ee" after "th"
+            InsertOperation(2, "ee", get_dummy_state(2)),
+            # Add another "k" on the end of "quickly"
+            InsertOperation(14, "k", get_dummy_state(2)),
+            # Add "wnwnwn" to the end of "brown"
+            InsertOperation(20, "wnwnwn", get_dummy_state(2)),
+            # Add "xx!" to the end of "fox"
+            InsertOperation(29, "xx!", get_dummy_state(2)),
+        ]), DeleteOperationNode.from_list([  # After the inserts, we would have "Thee vry qcklyk brwnwnwnwn fxxx!"
+             # Delete the "h" from "thee"
+             DeleteOperation(1, 1, get_dummy_state(2)),
+             # Delete "br" from "brwnwnwnwn"
+             DeleteOperation(15, 2, get_dummy_state(2)),
+             # Delete "f" from "foxxx!"
+             DeleteOperation(24, 1, get_dummy_state(2))
+        ]))
+        # After the deletes, we would have "Tee vry qcklyk wnwnwnwn oxxx!"
+
+        new_transaction = engine.process_transaction(sequence)
+
+        self.assertListEqual(new_transaction.inserts.to_list(), [
+            # Add an "ee" after "th"
+            InsertOperation(3, "ee", sequence.inserts[0].state),
+            # Add a "k" after "qckly"
+            InsertOperation(18, "k", sequence.inserts[1].state),
+            # Add a "wnwnwn" after "brwn"
+            InsertOperation(26, "wnwnwn", sequence.inserts[2].state),
+            # Add "xx!" after "fx"
+            InsertOperation(36, "xx!", sequence.inserts[3].state)
+        ])
+        # After the inserts are applied, we would have "Theee very quicklyk brouwnwnwnwn foxxx!"
+        self.assertListEqual(new_transaction.deletes.to_list(), [
+            # Delete the "h" in "theee"
+            DeleteOperation(1, 1, sequence.inserts[0].state),
+            # Delete "br"
+            DeleteOperation(19, 2, sequence.inserts[2].state),
+            # Delete "f"
+            DeleteOperation(30, 1, sequence.inserts[3].state)
+        ])
+        # After these are applied, we would have "Teee very quicklyk ouwnwnwnwn oxxx!"
+
+        self.assertEqual(engine._inserts.to_list(), [
+            InsertOperation(0, "The quick brown fox", State(1, 0, 0)),
+            # Add an "ee" after "the"
+            InsertOperation(3, "ee", sequence.inserts[0].state),
+            # insert "very " after "theee "
+            InsertOperation(6, "very ", engine._inserts[1].state),
+            # insert "ly" after "quick"
+            InsertOperation(16, "ly", engine._inserts[2].state),
+            # Add another "k" on the end of "quick"
+            InsertOperation(18, "k", sequence.inserts[1].state),
+            # insert "u" after the 'o' in "brown"
+            InsertOperation(23, "u", engine._inserts[3].state),
+            # Add "wnwnwn" to the end of "brown"
+            InsertOperation(26, "wnwnwn", sequence.inserts[2].state),
+            # Add "xx!" to the end of "fox"
+            InsertOperation(36, "xx!", sequence.inserts[3].state),
+
+            ])
+        # After all the inserts are applied, we should have "Theee very quicklyk brouwnwnwnwn foxxx!"
+        self.assertEqual(engine._deletes.to_list(), [
+            # Delete the "h" from "thee"
+            DeleteOperation(1, 1, get_dummy_state(2)),
+            # delete the first "e" from "teee"
+            DeleteOperation(1, 1, get_dummy_state(1)),
+            # delete the "e" from "very"
+            DeleteOperation(5, 1, get_dummy_state(1)),
+            # delete the "ui" from "quicklyk"
+            DeleteOperation(9, 2, get_dummy_state(1)),
+            # Delete "br" from "brouwnwnwnwn"
+            DeleteOperation(15, 2, get_dummy_state(2)),
+            # delete the "ou" from "brouwn"
+            DeleteOperation(15, 2, get_dummy_state(1)),
+            # Delete "f" from "foxxx!"
+            DeleteOperation(24, 1, get_dummy_state(2)),
+            # delete the "o" from "oxxx!"
+            DeleteOperation(24, 1, get_dummy_state(1)),
+
+
+            ])
         # After all the deletes are applied, we should have "Tee vry qcklyk wnwnwnwn xxx!"

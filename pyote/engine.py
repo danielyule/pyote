@@ -1,7 +1,7 @@
 from copy import deepcopy, copy
 
 from pyote.operations import DeleteOperation
-from pyote.utils import TransactionSequence, OperationNode
+from pyote.utils import TransactionSequence, OperationNode, DeleteOperationNode
 
 
 class OTException(Exception):
@@ -67,6 +67,18 @@ class Engine(object):
         self._deletes = self._merge_sequence(transformed_local_deletes, new_remote_deletes)
 
         return TransactionSequence(remote_sequence.starting_state, new_remote_inserts, new_remote_deletes)
+
+    def process_transaction(self, incoming_sequence):
+        """
+
+        :param pyote.utils.TransactionSequence incoming_sequence:
+        :return:
+        """
+        transformed_inserts, transformed_deletes = self._swap_sequence_delete_insert(self._deletes, incoming_sequence.inserts)
+        new_deletes, _ = self._swap_sequence_delete_delete(transformed_deletes, incoming_sequence.deletes)
+        self._inserts = self._merge_sequence(self._inserts, transformed_inserts)
+        self._deletes = self._merge_sequence(transformed_deletes, incoming_sequence.deletes)
+        return TransactionSequence(None, transformed_inserts, new_deletes)
 
     def _get_concurrent(self, starting_state, insert_sequence):
         """
@@ -466,3 +478,129 @@ class Engine(object):
             node1 = node1.next
 
         return merged_sequence
+
+    def _swap_sequence_delete_insert(self, sequence2, sequence1):
+        """
+        Swaps the execution order of the two input sequences.  That is, previously sequence2 was executed
+        before sequence1, now it is exectuted afterwards
+        :param DeleteOperationNode sequence2:
+        :param InsertOperationNode sequence1:
+        :return: A tuple with the two sequence's order of execution swapped.  They are in the order
+                 sequence1', sequence2'
+        :rtype: (InsertOperationNode, DeleteOperationNode):
+
+        """
+        new_sequence1 = None
+        new_sequence2 = None
+        new_node1 = None
+        new_node2 = None
+        node1 = sequence1
+        node2 = sequence2
+        size1 = 0
+        size2 = 0
+        while node1 and node2:
+                if node2.value.position <= node1.value.position - size1:
+                    if new_sequence2:
+                        new_node2.next = copy(node2)
+                        new_node2 = new_node2.next
+                    else:
+                        new_node2 = copy(node2)
+                        new_sequence2 = new_node2
+                    new_node2.value.position += size1
+                    size2 -= node2.value.get_increment()
+                    node2 = node2.next
+                else:
+                    if new_sequence1:
+                        new_node1.next = copy(node1)
+                        new_node1 = new_node1.next
+                    else:
+                        new_node1 = copy(node1)
+                        new_sequence1 = new_node1
+                    new_node1.value.position += size2
+                    size1 += node1.value.get_increment()
+                    node1 = node1.next
+        while node1:
+            if new_sequence1:
+                new_node1.next = copy(node1)
+                new_node1 = new_node1.next
+            else:
+                new_node1 = copy(node1)
+                new_sequence1 = new_node1
+            new_node1.value.position += size2
+            size1 += node1.value.get_increment()
+            node1 = node1.next
+        while node2:
+            if new_sequence2:
+                new_node2.next = copy(node2)
+                new_node2 = new_node2.next
+            else:
+                new_node2 = copy(node2)
+                new_sequence2 = new_node2
+            new_node2.value.position += size1
+            size2 -= node2.value.get_increment()
+            node2 = node2.next
+
+        return new_sequence1, new_sequence2
+
+    def _swap_sequence_delete_delete(self, sequence2, sequence1):
+        """
+        Swaps the execution order of the two input sequences.  That is, previously sequence2 was executed
+        before sequence1, now it is exectuted afterwards
+        :param DeleteOperationNode sequence2:
+        :param DeleteOperationNode sequence1:
+        :return: A tuple with the two sequence's order of execution swapped.  They are in the order
+                 sequence1', sequence2'
+        :rtype: (DeleteOperationNode, DeleteOperationNode):
+
+        """
+        new_sequence1 = None
+        new_sequence2 = None
+        new_node1 = None
+        new_node2 = None
+        node1 = sequence1
+        node2 = sequence2
+        size1 = 0
+        size2 = 0
+        while node1 and node2:
+            if node2.value.position <= node1.value.position - size1:
+                if new_sequence2:
+                    new_node2.next = copy(node2)
+                    new_node2 = new_node2.next
+                else:
+                    new_node2 = copy(node2)
+                    new_sequence2 = new_node2
+                new_node2.value.position += size1
+                size2 -= node2.value.get_increment()
+                node2 = node2.next
+            else:
+                if new_sequence1:
+                    new_node1.next = copy(node1)
+                    new_node1 = new_node1.next
+                else:
+                    new_node1 = copy(node1)
+                    new_sequence1 = new_node1
+                new_node1.value.position += size2
+                size1 -= node1.value.get_increment()
+                node1 = node1.next
+        while node1:
+            if new_sequence1:
+                new_node1.next = copy(node1)
+                new_node1 = new_node1.next
+            else:
+                new_node1 = copy(node1)
+                new_sequence1 = new_node1
+            new_node1.value.position += size2
+            size1 -= node1.value.get_increment()
+            node1 = node1.next
+        while node2:
+            if new_sequence2:
+                new_node2.next = copy(node2)
+                new_node2 = new_node2.next
+            else:
+                new_node2 = copy(node2)
+                new_sequence2 = new_node2
+            new_node2.value.position += size1
+            size2 -= node2.value.get_increment()
+            node2 = node2.next
+
+        return new_sequence1, new_sequence2
