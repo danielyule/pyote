@@ -2,13 +2,12 @@ import json
 
 
 class Operation(object):
-    def __init__(self, position, state):
+    def __init__(self, position):
         """
         Creates a new operation that is based on the given state
         :param int position: The position in the buffer that this operation takes effect in
-        :param State state: The state that this operation was performed on
         """
-        self.state = state
+        self.state = None
         self.position = position
 
     def __getstate__(self):
@@ -44,8 +43,8 @@ class InsertOperation(Operation):
     """
     __slots__ = ['state', 'position', 'value']
 
-    def __init__(self, position, value, state):
-        Operation.__init__(self, position, state)
+    def __init__(self, position, value):
+        Operation.__init__(self, position)
         self.value = value
 
     def __getstate__(self):
@@ -76,8 +75,8 @@ class DeleteOperation(Operation):
     """
     __slots__ = ['state', 'position', 'length']
 
-    def __init__(self, position, length, state):
-        Operation.__init__(self, position, state)
+    def __init__(self, position, length):
+        Operation.__init__(self, position)
         self.length = length
 
     def __getstate__(self):
@@ -85,7 +84,7 @@ class DeleteOperation(Operation):
         sstate.update({
             'type': 'remove',
             'length': self.length
-            })
+        })
         return sstate
 
     def __setstate__(self, state):

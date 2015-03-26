@@ -2,7 +2,7 @@ from copy import deepcopy
 
 
 class TransactionSequence(object):
-    def __init__(self, starting_state, inserts=None, deletes=None):
+    def __init__(self, starting_state=None, inserts=None, deletes=None):
         """
 
         :param State starting_state:
@@ -28,6 +28,13 @@ class TransactionSequence(object):
         if nodes:
             return ", {}{}".format(nodes.value, self._print_nodes(nodes.next, False))
         return "]"
+
+    def __getstate__(self):
+        return {
+            'inserts': self.inserts.to_list(),
+            'deletes': self.deletes.to_list(),
+            'starting_state': self.starting_state
+        }
 
 
 class OperationNode(object):
@@ -97,6 +104,11 @@ class InsertOperationNode(OperationNode):
 
         return head
 
+    def __copy__(self):
+        new_node = InsertOperationNode(deepcopy(self.value))
+        new_node.next = self.next
+        return new_node
+
 
 class DeleteOperationNode(OperationNode):
     __slots__ = ["value", "next"]
@@ -126,10 +138,15 @@ class DeleteOperationNode(OperationNode):
 
         return head
 
+    def __copy__(self):
+        new_node = DeleteOperationNode(deepcopy(self.value))
+        new_node.next = self.next
+        return new_node
+
 
 class State(object):
     def __init__(self, site_id, local_time, remote_time):
-        self.site_id = site_id,
+        self.site_id = site_id
         self.local_time = local_time
         self.remote_time = remote_time
 
@@ -140,7 +157,7 @@ class State(object):
             'remote_time': self.remote_time,
         }
 
-    def __setstate(self, state):
+    def __setstate__(self, state):
         self.site_id = state['site_id']
         self.local_time = state['local_time']
         self.remote_time = state['remote_time']

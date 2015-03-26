@@ -1,7 +1,7 @@
-from copy import deepcopy, copy
+from copy import copy
 
 from pyote.operations import DeleteOperation
-from pyote.utils import TransactionSequence, OperationNode, DeleteOperationNode
+from pyote.utils import TransactionSequence, OperationNode, DeleteOperationNode, State
 
 
 class OTException(Exception):
@@ -17,17 +17,23 @@ class Engine(object):
         position in the buffer are stored before those which happen at a higher position, and similarly for
         deletions
 
-        :param integer site_id: An id which uniquely identifies this site across all peers
+        :param int site_id: An id which uniquely identifies this site across all peers
         """
-
+        #: The unique id for this site
+        self.site_id = site_id
+        """:type: int"""
+        #: The state of the most recently applied operation
+        self.last_state = None
+        """:type: State"""
         #: The inserts for this site stored in effect order as a linked list
         self._inserts = None
         """:type: pyote.utils.InsertOperationNode"""
+        self._inserts.value.state = self.last_state
         #: The deletes for this site stored in effect order as a linked list
         self._deletes = None
         """:type: pyote.utils.DeleteOperationNode"""
-        #: The unique id for this site
-        self.site_id = site_id
+        #: The current time stamp for operations that have been integrated into the history
+        self._time_stamp = 0
         """:type: int"""
 
     def integrate_remote(self, remote_sequence):
@@ -50,6 +56,8 @@ class Engine(object):
         # Transform the remote inserts so that they account for the changes from the local deletes
         new_remote_inserts = self._transform_insert_delete(transformed_remote_inserts, self._deletes)
 
+        self._assign_timestamps(transformed_remote_inserts)
+
         # Merge the transformed remote inserts with the local.  Note that we use the inserts that have not been
         # transformed by deletes, as the local inserts always preceded the deletes.
         self._inserts = self._merge_sequence(self._inserts, transformed_remote_inserts)
@@ -63,22 +71,58 @@ class Engine(object):
         # Transform the remote deletes with ALL of the local deletes.
         new_remote_deletes = self._transform_delete_delete(transformed_remote_deletes, transformed_local_deletes)
 
+        self._assign_timestamps(new_remote_deletes)
+
         # Merge the remote deletes that have taken all the local operations into effect with the local deletes
         self._deletes = self._merge_sequence(transformed_local_deletes, new_remote_deletes)
 
         return TransactionSequence(remote_sequence.starting_state, new_remote_inserts, new_remote_deletes)
 
-    def process_transaction(self, incoming_sequence):
+    def process_transaction(self, outgoing_sequence):
+        """
+        Processes a series of operations prior to being sent out to remote sites.  The operations must
+        have been performed on the data after every operation in the local history, but no others.  The
+        operations in the transaction must also be effect order, with the inserts preceding the deletes.
+        :param pyote.utils.TransactionSequence outgoing_sequence: The sequence of operations to process
+        :return: A transaction sequence appropriate to send to other peers.  This transaction sequence will not have
+                 any deletes from the local history included.
+        :rtype: TransactionSequence
         """
 
-        :param pyote.utils.TransactionSequence incoming_sequence:
-        :return:
-        """
-        transformed_inserts, transformed_deletes = self._swap_sequence_delete_insert(self._deletes, incoming_sequence.inserts)
-        new_deletes, _ = self._swap_sequence_delete_delete(transformed_deletes, incoming_sequence.deletes)
+        # Record the current state so that when we transmit this sequence, we can place it within the history
+        outgoing_state = self.last_state
+        self._assign_timestamps(outgoing_sequence.inserts)
+        self._assign_timestamps(outgoing_sequence.deletes)
+
+        # Swap the execution order of the outgoing insert operations so that they happen before the local deletes
+        transformed_inserts, transformed_deletes = self._swap_sequence_delete_insert(self._deletes,
+                                                                                     outgoing_sequence.inserts)
+
+        # Swap the execution order of the outgoing delete operations so they happen before the local deletes
+        new_deletes, _ = self._swap_sequence_delete_delete(transformed_deletes, outgoing_sequence.deletes)
+
+        # Record that we've performed the outgoing insertion operations
         self._inserts = self._merge_sequence(self._inserts, transformed_inserts)
-        self._deletes = self._merge_sequence(transformed_deletes, incoming_sequence.deletes)
-        return TransactionSequence(None, transformed_inserts, new_deletes)
+
+        # Record that we've performed the outgoing delete operations
+        self._deletes = self._merge_sequence(transformed_deletes, outgoing_sequence.deletes)
+
+        return TransactionSequence(outgoing_state, transformed_inserts, new_deletes)
+
+    def _assign_timestamps(self, sequence):
+        """
+        Assigns a sequential local timestamp to every node in the sequence.  If the node is lacking
+        a remote timestamp, it will add one of those too (because this sequence was locally generated)
+        :param OperationNode sequence:  The sequence of operations to assign timestamps to
+        """
+        node = sequence
+        while node:
+            self._time_stamp += 1
+            if node.value.state:
+                node.value.state.local_time = self._time_stamp
+            else:
+                node.value.state = State(self.site_id, self._time_stamp, self._time_stamp)
+            node = node.next
 
     def _get_concurrent(self, starting_state, insert_sequence):
         """
@@ -88,6 +132,8 @@ class Engine(object):
         :type insert_sequence: pyote.utils.InsertOperationNode
         :rtype: pyote.utils.InsertOperationNode
         """
+        if not starting_state:
+            return insert_sequence
         local_ref = -1
         # Look through all operations in our history
         node = self._inserts
@@ -135,7 +181,8 @@ class Engine(object):
 
         return concurrent_head
 
-    def _transform_insert_insert(self, incoming_sequence, existing_sequence):
+    @staticmethod
+    def _transform_insert_insert(incoming_sequence, existing_sequence):
         """
         Performs inclusive transformation on sequence1 with sequence2, meaning that the effects of `existing sequence`
         are incorporated in `incoming_sequence`
@@ -192,7 +239,8 @@ class Engine(object):
             incoming_node = incoming_node.next
         return transformed_head
 
-    def _transform_delete_insert(self, incoming_sequence, existing_sequence):
+    @staticmethod
+    def _transform_delete_insert(incoming_sequence, existing_sequence):
         """
         Performs inclusive transformation on sequence1 with sequence2, meaning that the effects of `existing sequence`
         are incorporated in `incoming_sequence`
@@ -249,7 +297,8 @@ class Engine(object):
             incoming_node = incoming_node.next
         return transformed_head
 
-    def _transform_insert_delete(self, incoming_sequence, existing_sequence):
+    @staticmethod
+    def _transform_insert_delete(incoming_sequence, existing_sequence):
         """
         Performs inclusive transformation on `incoming_sequence` with `existing_sequence`, meaning that the effects of
         `existing sequence` are incorporated in `incoming_sequence`
@@ -312,7 +361,8 @@ class Engine(object):
             incoming_node = incoming_node.next
         return transformed_head
 
-    def _transform_delete_delete(self, incoming_sequence, existing_sequence):
+    @staticmethod
+    def _transform_delete_delete(incoming_sequence, existing_sequence):
         """
         Performs inclusive transformation on sequence1 with sequence2, meaning that the effects of `existing sequence`
         are incorporated in `incoming_sequence`
@@ -385,8 +435,7 @@ class Engine(object):
                         transformed_sequence.value.length -= incoming_pos + incoming_node.value.length - existing_pos
                         next_node = OperationNode(DeleteOperation(existing_pos + existing_node.value.length,
                                                                   incoming_node.value.length + incoming_pos -
-                                                                  existing_pos - existing_node.value.length,
-                                                                  deepcopy(incoming_node.value.state)))
+                                                                  existing_pos - existing_node.value.length))
                         next_node.next = incoming_node.next
                         # Because we are inserting a new node in the incoming sequence, we will double count it when
                         # calculating the amount of deleting that we've done so far, so we subtract the size of the
@@ -427,10 +476,13 @@ class Engine(object):
         """
         Merges two sequence that are in effect order into one sequence that maintains effect order.  All of the
         operations in sequence1 must already have been incorporated (via :meth:_transform) into the operations in
-        sequence 2.  Essentially this works as a two way merge operation.
+        `sequence2`. Essentially this works as a two way merge operation.  As a result, state from the last operation
+        in `sequence2` will be recorded as the most recently applied state.
+
         :param pyote.utils.OperationNode sequence1: The first sequence to merge
         :param pyote.utils.OperationNode sequence2: The second sequence to merge.  Must have incorporated the effects of
-                                                    sequence1 already
+                                                    `sequence1` already, and cannot contain any overlaps with the
+                                                    effects of `sequence1` (if they are both delete operations)
         :return: A new sequence that is effect equivalent to running sequence1 then sequence 2.
         :rtype OperationNode
         """
@@ -442,44 +494,47 @@ class Engine(object):
         while node1 and node2:
             if node2.value.position - value_size < node1.value.position:
                 if merged_node:
-                    merged_node.next = OperationNode(node2.value)
+                    merged_node.next = copy(node2)
                     merged_node = merged_node.next
                 else:
-                    merged_node = OperationNode(node2.value)
+                    merged_node = copy(node2)
                     merged_sequence = merged_node
                 value_size += node2.value.get_increment()
+                self.last_state = node2.value.state
                 node2 = node2.next
             else:
                 node1.value.position += value_size
                 if merged_node:
-                    merged_node.next = OperationNode(node1.value)
+                    merged_node.next = copy(node1)
                     merged_node = merged_node.next
                 else:
-                    merged_node = OperationNode(node1.value)
+                    merged_node = copy(node1)
                     merged_sequence = merged_node
                 node1 = node1.next
         while node2:
             if merged_node:
-                merged_node.next = OperationNode(node2.value)
+                merged_node.next = copy(node2)
                 merged_node = merged_node.next
             else:
-                merged_node = OperationNode(node2.value)
+                merged_node = copy(node2)
                 merged_sequence = merged_node
             value_size += node2.value.get_increment()
+            self.last_state = node2.value.state
             node2 = node2.next
         while node1:
             node1.value.position += value_size
             if merged_node:
-                merged_node.next = OperationNode(node1.value)
+                merged_node.next = copy(node1)
                 merged_node = merged_node.next
             else:
-                merged_node = OperationNode(node1.value)
+                merged_node = copy(node1)
                 merged_sequence = merged_node
             node1 = node1.next
 
         return merged_sequence
 
-    def _swap_sequence_delete_insert(self, sequence2, sequence1):
+    @staticmethod
+    def _swap_sequence_delete_insert(sequence2, sequence1):
         """
         Swaps the execution order of the two input sequences.  That is, previously sequence2 was executed
         before sequence1, now it is exectuted afterwards
@@ -542,7 +597,8 @@ class Engine(object):
 
         return new_sequence1, new_sequence2
 
-    def _swap_sequence_delete_delete(self, sequence2, sequence1):
+    @staticmethod
+    def _swap_sequence_delete_delete(sequence2, sequence1):
         """
         Swaps the execution order of the two input sequences.  That is, previously sequence2 was executed
         before sequence1, now it is exectuted afterwards
@@ -582,9 +638,8 @@ class Engine(object):
                 next_node = node1.next
                 if node1.value.position + size1 + node1.value.length > node2.value.position:
                     new_node1.value.length = node2.value.position - node1.value.position - size1
-                    next_node = DeleteOperationNode(DeleteOperation(node1.value.position,
-                                                                    node1.value.length - new_node1.value.length,
-                                                                    copy(new_node1.value.state)))
+                    next_node = DeleteOperationNode(
+                        DeleteOperation(node1.value.position, node1.value.length - new_node1.value.length))
                     next_node.next = node1.next
 
                 new_node1.value.position += size2
