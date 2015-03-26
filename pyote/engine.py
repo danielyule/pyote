@@ -28,7 +28,6 @@ class Engine(object):
         #: The inserts for this site stored in effect order as a linked list
         self._inserts = None
         """:type: pyote.utils.InsertOperationNode"""
-        self._inserts.value.state = self.last_state
         #: The deletes for this site stored in effect order as a linked list
         self._deletes = None
         """:type: pyote.utils.DeleteOperationNode"""
