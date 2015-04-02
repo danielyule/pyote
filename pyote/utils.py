@@ -1,4 +1,5 @@
 from copy import deepcopy
+from pyote.operations import InsertOperation, DeleteOperation
 
 
 class TransactionSequence(object):
@@ -31,10 +32,50 @@ class TransactionSequence(object):
 
     def __getstate__(self):
         return {
-            'inserts': self.inserts.to_list(),
-            'deletes': self.deletes.to_list(),
+            'inserts': self.inserts.to_list() if self.inserts else [],
+            'deletes': self.deletes.to_list() if self.deletes else [],
             'starting_state': self.starting_state
         }
+
+    @classmethod
+    def from_message(cls, message):
+        if message['starting_state']:
+            starting_state = State.__new__(State)
+            starting_state.__setstate__(message['starting_state'])
+        else:
+            starting_state = None
+        if len(message['inserts']) > 0:
+            inserts = InsertOperationNode(InsertOperation(message['inserts'][0]['position'],
+                                                          message['inserts'][0]['value']))
+            state = State.__new__(State)
+            state.__setstate__(message['inserts'][0]['state'])
+            inserts.value.state = state
+            inode = inserts
+            for insert in message['inserts'][1:]:
+                inode.next = InsertOperationNode(InsertOperation(insert['position'], insert['value']))
+                state = State.__new__(State)
+                state.__setstate__(insert['state'])
+                inode.value.state = state
+                inode = inode.next
+        else:
+            inserts = None
+        if len(message['deletes']) > 0:
+            deletes = DeleteOperationNode(DeleteOperation(message['deletes'][0]['position'],
+                                                          message['deletes'][0]['length']))
+            state = State.__new__(State)
+            state.__setstate__(message['deletes'][0]['state'])
+            deletes.value.state = state
+            dnode = deletes
+            for delete in message['deletes'][1:]:
+                dnode.next = DeleteOperationNode(DeleteOperation(delete['position'], delete['length']))
+                state = State.__new__(State)
+                state.__setstate__(delete['state'])
+                dnode.value.state = state
+                dnode = dnode.next
+        else:
+            deletes = None
+
+        return TransactionSequence(starting_state, inserts, deletes)
 
 
 class OperationNode(object):
@@ -161,3 +202,6 @@ class State(object):
         self.site_id = state['site_id']
         self.local_time = state['local_time']
         self.remote_time = state['remote_time']
+
+    def __repr__(self):
+        return str(self.__getstate__())

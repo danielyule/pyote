@@ -432,10 +432,11 @@ class Engine(object):
                         # Otherwise, shorten the operation AND create a new operation
                         # which starts after the existing operation
                         transformed_sequence.value.length -= incoming_pos + incoming_node.value.length - existing_pos
-                        next_node = OperationNode(DeleteOperation(existing_pos + existing_node.value.length,
-                                                                  incoming_node.value.length + incoming_pos -
-                                                                  existing_pos - existing_node.value.length))
+                        next_node = DeleteOperationNode(DeleteOperation(existing_pos + existing_node.value.length,
+                                                                        incoming_node.value.length + incoming_pos -
+                                                                        existing_pos - existing_node.value.length))
                         next_node.next = incoming_node.next
+                        next_node.value.state = copy(incoming_node.value.state)
                         # Because we are inserting a new node in the incoming sequence, we will double count it when
                         # calculating the amount of deleting that we've done so far, so we subtract the size of the
                         #  newly created node (it will be re-added on the next iteration)
@@ -450,6 +451,7 @@ class Engine(object):
 
         # Take care of any elements that weren't handled in the above.
         while incoming_node:
+            incoming_pos = incoming_node.value.position + incoming_value_size
             if transformed_sequence:
                 transformed_sequence.next = copy(incoming_node)
                 transformed_sequence = transformed_sequence.next
@@ -536,10 +538,10 @@ class Engine(object):
     def _swap_sequence_delete_insert(sequence2, sequence1):
         """
         Swaps the execution order of the two input sequences.  That is, previously sequence2 was executed
-        before sequence1, now it is exectuted afterwards
+        before sequence1, now it is executed afterwards
         :param DeleteOperationNode sequence2:
         :param InsertOperationNode sequence1:
-        :return: A tuple with the two sequence's order of execution swapped.  They are in the order
+        :return: A tuple with the two sequences' order of execution swapped.  They are in the order
                  sequence1', sequence2'
         :rtype: (InsertOperationNode, DeleteOperationNode):
 
@@ -640,6 +642,7 @@ class Engine(object):
                     next_node = DeleteOperationNode(
                         DeleteOperation(node1.value.position, node1.value.length - new_node1.value.length))
                     next_node.next = node1.next
+                    next_node.value.state = copy(node1.value.state)
 
                 new_node1.value.position += size2
                 size1 -= new_node1.value.get_increment()
@@ -666,3 +669,16 @@ class Engine(object):
             node2 = node2.next
 
         return new_sequence1, new_sequence2
+
+    def __repr__(self):
+        return "engine.inserts: {}\nengine.deletes: {}".format(self._print_nodes(self._inserts),
+                                                               self._print_nodes(self._deletes))
+
+    def _print_nodes(self, nodes, first_time=True):
+        if first_time:
+            if nodes:
+                return "[{}{}".format(nodes.value, self._print_nodes(nodes.next, False))
+            return "[]"
+        if nodes:
+            return ", {}{}".format(nodes.value, self._print_nodes(nodes.next, False))
+        return "]"

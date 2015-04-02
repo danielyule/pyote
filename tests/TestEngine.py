@@ -440,6 +440,75 @@ class EngineTests(TestCase):
         ])
         # After all the deletes are applied, we should have "Tee vry qcklyk wnwnwnwn xxx!"
 
+    def test_integrate_sequences_on_empty_engine(self):
+        engine = Engine(1)
+
+        # After the deletes are applied, we would have "Th vry qckly brwn fx"
+
+        sequence = TransactionSequence(None, convert_insert_list([
+            # Add an "ee" after "the"
+            InsertOperation(3, "ee"),
+            # Add another "k" on the end of "quick"
+            InsertOperation(11, "k"),
+            # Add "wnwnwn" to the end of "brown"
+            InsertOperation(18, "wnwnwn"),
+            # Add "xx!" to the end of "fox"
+            InsertOperation(28, "xx!"),
+            # After the inserts, we would have "Theee quickk brownwnwnwn foxxx!"
+        ], 2), convert_delete_list([
+            # Delete the "he" from "theee"
+            DeleteOperation(1, 2),
+            # Delete "bro" from "brownwnwnwn"
+            DeleteOperation(11, 3),
+            # Delete "f" from "foxxx"
+            DeleteOperation(20, 1)
+        ], 2))
+        # After the deletes, we would have "Tee quickk wnwnwnwn oxxx!"
+
+        new_transaction = engine.integrate_remote(sequence)
+
+        self.assertListEqual(new_transaction.inserts.to_list(), [
+            # Add an "ee" after "the"
+            InsertOperation(3, "ee"),
+            # Add another "k" on the end of "quick"
+            InsertOperation(11, "k"),
+            # Add "wnwnwn" to the end of "brown"
+            InsertOperation(18, "wnwnwn"),
+            # Add "xx!" to the end of "fox"
+            InsertOperation(28, "xx!"),
+        ])
+        # After these are applied, we would have "Thee vry qcklyk brwnwnwnwn fxxx!"
+        self.assertListEqual(new_transaction.deletes.to_list(), [
+            # Delete the "he" from "theee"
+            DeleteOperation(1, 2),
+            # Delete "bro" from "brownwnwnwn"
+            DeleteOperation(11, 3),
+            # Delete "f" from "foxxx"
+            DeleteOperation(20, 1)
+        ])
+        # After these are applied, we would have "Tee vry qcklyk wnwnwnwn xxx!"
+
+        self.assertEqual(engine._inserts.to_list(), [
+            # Add an "ee" after "the"
+            InsertOperation(3, "ee"),
+            # Add another "k" on the end of "quick"
+            InsertOperation(11, "k"),
+            # Add "wnwnwn" to the end of "brown"
+            InsertOperation(18, "wnwnwn"),
+            # Add "xx!" to the end of "fox"
+            InsertOperation(28, "xx!"),
+        ])
+        # After all the inserts are applied, we should have "Theee very quicklyk brouwnwnwnwn foxxx!"
+        self.assertEqual(engine._deletes.to_list(), [
+            # Delete the "he" from "theee"
+            DeleteOperation(1, 2),
+            # Delete "bro" from "brownwnwnwn"
+            DeleteOperation(11, 3),
+            # Delete "f" from "foxxx"
+            DeleteOperation(20, 1)
+        ])
+        # After all the deletes are applied, we should have "Tee vry qcklyk wnwnwnwn xxx!"
+
     def test_swap_sequence_delete_insert(self):
         engine = Engine(1)
         # Starting with the buffer "The quick brown fox"
