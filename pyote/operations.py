@@ -50,7 +50,6 @@ class InsertOperation(Operation):
     def __getstate__(self):
         sstate = Operation.__getstate__(self)
         sstate.update({
-            'type': 'insert',
             'value': self.value
         })
         return sstate
@@ -82,7 +81,6 @@ class DeleteOperation(Operation):
     def __getstate__(self):
         sstate = Operation.__getstate__(self)
         sstate.update({
-            'type': 'remove',
             'length': self.length
         })
         return sstate
